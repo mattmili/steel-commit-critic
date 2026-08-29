@@ -61,3 +61,34 @@ export function cleanupClone(path: string): void {
     /* best effort */
   }
 }
+
+export interface StagedDiffStats {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  /** Per-file line-change totals, most-changed first. */
+  files: { file: string; changes: number }[];
+}
+
+/** Raw unified diff of everything currently staged (`git diff --staged`). */
+export async function getStagedDiff(repoPath: string): Promise<string> {
+  return git(repoPath).diff(["--staged"]);
+}
+
+/** Summary counts for the staged diff, for the "N files changed" line. */
+export async function getStagedDiffStats(
+  repoPath: string,
+): Promise<StagedDiffStats> {
+  const summary = await git(repoPath).diffSummary(["--staged"]);
+  return {
+    filesChanged: summary.changed,
+    insertions: summary.insertions,
+    deletions: summary.deletions,
+    files: summary.files
+      .map((f) => ({
+        file: f.file,
+        changes: "changes" in f ? f.changes : 0,
+      }))
+      .sort((a, b) => b.changes - a.changes),
+  };
+}
