@@ -59,8 +59,8 @@ export async function run(argv: string[]): Promise<void> {
     return;
   }
 
-  // Interactive writer is wired in a later step.
-  console.log("mode: write");
+  const { runWrite } = await import("./write.js");
+  await runWrite();
 }
 
 const invokedDirectly =
