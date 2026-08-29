@@ -5,6 +5,9 @@ import { simpleGit, type SimpleGit } from "simple-git";
 
 export interface CommitRecord {
   hash: string;
+  /** First line of the commit message. */
+  subject: string;
+  /** Full message: subject plus body when present. */
   message: string;
   author: string;
   date: string;
@@ -21,20 +24,34 @@ function git(repoPath: string): SimpleGit {
 
 /**
  * Return up to `limit` most-recent commits for the repo at `repoPath`,
- * newest first. Uses only the commit subject (first line) as `message`,
- * which is what commit-message critique operates on.
+ * newest first, with the full message (subject + body) for critique and
+ * the subject alone kept separately for one-word detection.
  */
 export async function getRecentCommits(
   repoPath: string,
   limit: number = DEFAULT_COMMIT_LIMIT,
 ): Promise<CommitRecord[]> {
-  const log = await git(repoPath).log({ maxCount: limit });
-  return log.all.map((c) => ({
-    hash: c.hash,
-    message: c.message,
-    author: c.author_name,
-    date: c.date,
-  }));
+  const log = await git(repoPath).log({
+    maxCount: limit,
+    format: {
+      hash: "%H",
+      subject: "%s",
+      body: "%b",
+      author: "%an",
+      date: "%aI",
+    },
+  });
+  return log.all.map((c) => {
+    const subject = c.subject.trim();
+    const body = c.body.trim();
+    return {
+      hash: c.hash,
+      subject,
+      message: body ? `${subject}\n\n${body}` : subject,
+      author: c.author,
+      date: c.date,
+    };
+  });
 }
 
 /**
