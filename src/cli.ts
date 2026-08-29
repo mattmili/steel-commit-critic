@@ -53,22 +53,13 @@ export async function run(argv: string[]): Promise<void> {
 
   const mode = resolveMode(opts);
 
-  // Wired to the real orchestrators in later steps; for now, report the mode
-  // and resolve the repo path (cloning the remote when --url is given).
   if (mode.kind === "analyze") {
-    const { cloneRemote, cleanupClone } = await import("./git.js");
-    if (mode.url) {
-      const path = await cloneRemote(mode.url);
-      try {
-        console.log(`mode: analyze (remote: ${mode.url} -> ${path})`);
-      } finally {
-        cleanupClone(path);
-      }
-    } else {
-      console.log(`mode: analyze (current repo: ${process.cwd()})`);
-    }
+    const { runAnalyze } = await import("./analyze.js");
+    await runAnalyze({ url: mode.url });
     return;
   }
+
+  // Interactive writer is wired in a later step.
   console.log("mode: write");
 }
 
