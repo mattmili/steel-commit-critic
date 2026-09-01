@@ -1,5 +1,6 @@
 import {
   DEFAULT_COMMIT_LIMIT,
+  assertGitRepo,
   cleanupClone,
   cloneRemote,
   getRecentCommits,
@@ -70,6 +71,7 @@ export async function analyze(
 
   const repoPath = url ? await cloneRemote(url) : cwd;
   try {
+    if (!url) await assertGitRepo(repoPath);
     const commits = await getRecentCommits(repoPath, limit);
     if (commits.length === 0) {
       throw new Error("No commits found to analyze.");

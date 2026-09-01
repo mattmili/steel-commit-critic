@@ -22,6 +22,28 @@ function git(repoPath: string): SimpleGit {
   return simpleGit({ baseDir: repoPath });
 }
 
+/** Throw a friendly error when `repoPath` is not inside a git repo. */
+export async function assertGitRepo(repoPath: string): Promise<void> {
+  let isRepo = false;
+  try {
+    isRepo = await git(repoPath).checkIsRepo();
+  } catch {
+    isRepo = false;
+  }
+  if (!isRepo) {
+    throw new Error(`Not a git repository: ${repoPath}`);
+  }
+}
+
+/** Commit the currently-staged changes with `message`. Returns the new hash. */
+export async function commitStaged(
+  repoPath: string,
+  message: string,
+): Promise<string> {
+  const result = await git(repoPath).commit(message);
+  return result.commit;
+}
+
 /**
  * Return up to `limit` most-recent commits for the repo at `repoPath`,
  * newest first, with the full message (subject + body) for critique and
