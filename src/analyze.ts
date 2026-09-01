@@ -195,6 +195,19 @@ export async function analyze(
 
 export interface RunAnalyzeOptions extends AnalyzeOptions {
   json?: boolean;
+  /** Exit non-zero if the average score is below this (CI quality gate). */
+  failUnder?: number;
+}
+
+/** Thrown when `--fail-under` is set and the average score is below it. */
+export class QualityGateError extends Error {
+  constructor(average: number, threshold: number) {
+    super(
+      `Average score ${average.toFixed(1)}/10 is below the --fail-under ` +
+        `threshold of ${threshold}.`,
+    );
+    this.name = "QualityGateError";
+  }
 }
 
 export async function runAnalyze(
@@ -218,11 +231,20 @@ export async function runAnalyze(
 
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
+    } else {
+      process.stdout.write(renderAnalysis(result));
+      for (const w of result.warnings) console.error(`\n! ${w}`);
     }
 
-    process.stdout.write(renderAnalysis(result));
-    for (const w of result.warnings) console.error(`\n! ${w}`);
+    if (
+      options.failUnder !== undefined &&
+      result.summary.averageScore < options.failUnder
+    ) {
+      throw new QualityGateError(
+        result.summary.averageScore,
+        options.failUnder,
+      );
+    }
   } catch (err) {
     spinner.fail();
     throw err;

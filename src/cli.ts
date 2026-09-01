@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 
 export interface CliOptions {
@@ -7,10 +8,17 @@ export interface CliOptions {
   url?: string;
   json?: boolean;
   limit?: number;
+  failUnder?: number;
 }
 
 export type Mode =
-  | { kind: "analyze"; url?: string; json: boolean; limit?: number }
+  | {
+      kind: "analyze";
+      url?: string;
+      json: boolean;
+      limit?: number;
+      failUnder?: number;
+    }
   | { kind: "write" };
 
 /** Parse and validate the --limit value. */
@@ -20,6 +28,26 @@ export function parseLimit(raw: string): number {
     throw new Error(`--limit must be a positive integer, got "${raw}".`);
   }
   return n;
+}
+
+/** Parse and validate the --fail-under value (a score from 0 to 10). */
+export function parseFailUnder(raw: string): number {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n) || n < 0 || n > 10) {
+    throw new Error(`--fail-under must be a number from 0 to 10, got "${raw}".`);
+  }
+  return n;
+}
+
+/** Read this package's version for `--version`, tolerating a missing file. */
+export function readVersion(): string {
+  try {
+    const url = new URL("../package.json", import.meta.url);
+    const pkg = JSON.parse(readFileSync(url, "utf8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
 }
 
 /**
@@ -39,6 +67,7 @@ export function resolveMode(opts: CliOptions): Mode {
       url: opts.url,
       json: opts.json ?? false,
       limit: opts.limit,
+      failUnder: opts.failUnder,
     };
   }
   throw new Error("Nothing to do. Pass --analyze [--url=<repo-url>] or --write.");
@@ -65,7 +94,13 @@ export function buildProgram(): Command {
       "--limit <n>",
       "with --analyze, number of commits to review (default 50)",
       parseLimit,
-    );
+    )
+    .option(
+      "--fail-under <score>",
+      "with --analyze, exit non-zero if the average score is below this",
+      parseFailUnder,
+    )
+    .version(readVersion(), "-v, --version");
   return program;
 }
 
@@ -78,7 +113,12 @@ export async function run(argv: string[]): Promise<void> {
 
   if (mode.kind === "analyze") {
     const { runAnalyze } = await import("./analyze.js");
-    await runAnalyze({ url: mode.url, json: mode.json, limit: mode.limit });
+    await runAnalyze({
+      url: mode.url,
+      json: mode.json,
+      limit: mode.limit,
+      failUnder: mode.failUnder,
+    });
     return;
   }
 

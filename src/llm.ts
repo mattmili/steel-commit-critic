@@ -70,6 +70,8 @@ async function requestJson<T>(
       message = await client.messages.create({
         model,
         max_tokens: maxTokens,
+        // Deterministic: the same history should produce the same scores.
+        temperature: 0,
         system,
         messages,
       });
@@ -202,15 +204,16 @@ export async function critiqueCommits(
   const critiques: CommitCritique[] = [];
   let completed = 0;
   let failedBatches = 0;
+  let lastError: string | undefined;
 
   for (const batch of batches) {
     try {
       critiques.push(...(await critiqueBatch(batch)));
     } catch (err) {
       failedBatches += 1;
+      lastError = err instanceof Error ? err.message : String(err);
       if (DEBUG) {
-        const detail = err instanceof Error ? err.message : String(err);
-        console.error(`[commit-critic] critique batch failed: ${detail}`);
+        console.error(`[commit-critic] critique batch failed: ${lastError}`);
       }
       // A whole run shouldn't fail because one batch did; keep what we have.
     }
@@ -220,7 +223,7 @@ export async function critiqueCommits(
 
   if (critiques.length === 0 && failedBatches > 0) {
     throw new Error(
-      "Every critique batch failed. Re-run with COMMIT_CRITIC_DEBUG=1 for details.",
+      `Could not critique any commits. ${lastError ?? "Unknown error."}`,
     );
   }
 
