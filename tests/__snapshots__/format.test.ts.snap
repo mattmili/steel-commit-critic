@@ -1,0 +1,38 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderAnalysis > matches the full rendered layout (ANSI-stripped) 1`] = `
+"2 commits  ·  avg 5.0/10  ·  grade D  ·  1 need work  ·  1 solid
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💩 COMMITS THAT NEED WORK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Commit: "wip"
+         abcdef1 · Ada · 1 week ago
+Score: 1/10  ▰▱▱▱▱▱▱▱▱▱
+Issue: no info
+Better: "say what"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💎 WELL-WRITTEN COMMITS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Commit: "feat(api): add cache
+
+         - ttl"
+Score: 9/10  ▰▰▰▰▰▰▰▰▰▱
+Why it's good: clear scope
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 YOUR STATS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Average score: 5.0/10
+Vague commits: 1 (50%)
+One-word commits: 1 (50%)
+
+Score spread:
+  1-3  ████████████████████ 1
+  4-6   0
+  7-10 ████████████████████ 1
+"
+`;

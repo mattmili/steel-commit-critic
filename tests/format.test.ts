@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResult } from "../src/analyze.js";
 import {
   colorScore,
@@ -41,6 +41,13 @@ describe("relativeDate", () => {
 });
 
 describe("renderAnalysis", () => {
+  // Freeze "now" so relative-date metadata is deterministic in the snapshot.
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-10T00:00:00Z"));
+  });
+  afterAll(() => vi.useRealTimers());
+
   const result: AnalyzeResult = {
     analyzed: 2,
     needsWork: [
@@ -116,6 +123,10 @@ describe("renderAnalysis", () => {
   it("indents multi-line commit bodies under the opening quote", () => {
     const out = stripAnsi(renderAnalysis(result));
     expect(out).toContain('Commit: "feat(api): add cache\n\n         - ttl"');
+  });
+
+  it("matches the full rendered layout (ANSI-stripped)", () => {
+    expect(stripAnsi(renderAnalysis(result))).toMatchSnapshot();
   });
 });
 
