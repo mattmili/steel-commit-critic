@@ -4,6 +4,7 @@ import {
   commitStaged,
   getStagedDiff,
   getStagedDiffStats,
+  type StagedDiffStats,
 } from "./git.js";
 import { suggestCommitMessage } from "./llm.js";
 import {
@@ -11,6 +12,7 @@ import {
   renderChangesDetected,
   renderSuggestion,
 } from "./format.js";
+import { createSpinner } from "./ui.js";
 import type { CommitSuggestion } from "./schema.js";
 
 export interface WriteOptions {
@@ -25,6 +27,35 @@ async function defaultPrompt(question: string): Promise<string> {
     return (await rl.question(question)).trim();
   } finally {
     rl.close();
+  }
+}
+
+/** Per-file `+/-` sparkline, scaled to the largest file in the change set. */
+function fileSparklines(stats: StagedDiffStats): string {
+  const max = Math.max(1, ...stats.files.map((f) => f.changes));
+  return stats.files
+    .slice(0, 10)
+    .map((f) => {
+      const width = Math.max(1, Math.round((f.changes / max) * 12));
+      return `  ${f.file}  ${"▍".repeat(width)} ${f.changes}`;
+    })
+    .join("\n");
+}
+
+async function draftMessage(
+  cwd: string,
+  diff: string,
+  stats: StagedDiffStats,
+): Promise<CommitSuggestion> {
+  const spinner = createSpinner();
+  spinner.start("Drafting a commit message...");
+  try {
+    const suggestion = await suggestCommitMessage(diff, stats);
+    spinner.succeed("Draft ready");
+    return suggestion;
+  } catch (err) {
+    spinner.fail();
+    throw err;
   }
 }
 
@@ -48,19 +79,30 @@ export async function runWrite(options: WriteOptions = {}): Promise<void> {
     `Analyzing staged changes... (${stats.filesChanged} files changed, ` +
       `+${stats.insertions} -${stats.deletions} lines)\n`,
   );
-
-  const suggestion: CommitSuggestion = await suggestCommitMessage(diff, stats);
-
-  console.log(renderChangesDetected(suggestion.changeTypes));
-  console.log();
-  console.log(renderSuggestion(suggestion));
+  console.log(fileSparklines(stats));
   console.log();
 
-  const typed = await prompt(
-    "Press Enter to accept, or type your own message:\n> ",
-  );
-  const message = typed === "" ? formatCommitMessage(suggestion) : typed;
+  let suggestion = await draftMessage(cwd, diff, stats);
 
-  const hash = await commitStaged(cwd, message);
-  console.log(`\nCommitted ${hash.slice(0, 7)}: ${message.split("\n")[0]}`);
+  // Loop so the user can regenerate before committing.
+  for (;;) {
+    console.log(renderChangesDetected(suggestion.changeTypes));
+    console.log();
+    console.log(renderSuggestion(suggestion));
+    console.log();
+
+    const typed = await prompt(
+      "Press Enter to accept, type your own message, or 'r' to regenerate:\n> ",
+    );
+
+    if (typed.toLowerCase() === "r") {
+      suggestion = await draftMessage(cwd, diff, stats);
+      continue;
+    }
+
+    const message = typed === "" ? formatCommitMessage(suggestion) : typed;
+    const hash = await commitStaged(cwd, message);
+    console.log(`\nCommitted ${hash.slice(0, 7)}: ${message.split("\n")[0]}`);
+    return;
+  }
 }

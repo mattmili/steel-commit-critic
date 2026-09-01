@@ -1,0 +1,47 @@
+$ commit-critic --analyze
+
+Analyzing last 50 commits...
+✓ Critique complete
+
+50 commits  ·  avg 4.2/10  ·  grade D  ·  34 need work  ·  9 solid
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💩 COMMITS THAT NEED WORK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Commit: "fixed bug"
+         a1b2c3d · Ada Lovelace · 2 weeks ago
+Score: 2/10  ▰▰▱▱▱▱▱▱▱▱
+Issue: Too vague - which bug? What was the impact?
+Better: "fix(auth): resolve token expiration handling"
+
+Commit: "wip"
+         f6f6f6f · Ada Lovelace · 4 days ago
+Score: 1/10  ▰▱▱▱▱▱▱▱▱▱
+Issue: No information about what's in progress
+Better: "Describe what you're working on"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💎 WELL-WRITTEN COMMITS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Commit: "feat(api): add Redis caching layer
+
+         - Implement cache for read endpoints
+         - Add TTL configuration
+         - Improves response time by 200ms"
+         9a9a9a9 · Bob Vance · 3 days ago
+Score: 9/10  ▰▰▰▰▰▰▰▰▰▱
+Why it's good: Clear scope, specific changes, measurable impact
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 YOUR STATS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Average score: 4.2/10
+Vague commits: 34 (68%)
+One-word commits: 12 (24%)
+
+Score spread:
+  1-3  ████████████████████ 24
+  4-6  ██████████ 12
+  7-10 ███████ 9

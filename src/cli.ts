@@ -5,11 +5,22 @@ export interface CliOptions {
   analyze?: boolean;
   write?: boolean;
   url?: string;
+  json?: boolean;
+  limit?: number;
 }
 
 export type Mode =
-  | { kind: "analyze"; url?: string }
+  | { kind: "analyze"; url?: string; json: boolean; limit?: number }
   | { kind: "write" };
+
+/** Parse and validate the --limit value. */
+export function parseLimit(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(`--limit must be a positive integer, got "${raw}".`);
+  }
+  return n;
+}
 
 /**
  * Resolve the mutually-exclusive run mode from parsed flags.
@@ -23,7 +34,12 @@ export function resolveMode(opts: CliOptions): Mode {
     return { kind: "write" };
   }
   if (opts.analyze) {
-    return { kind: "analyze", url: opts.url };
+    return {
+      kind: "analyze",
+      url: opts.url,
+      json: opts.json ?? false,
+      limit: opts.limit,
+    };
   }
   throw new Error("Nothing to do. Pass --analyze [--url=<repo-url>] or --write.");
 }
@@ -35,7 +51,7 @@ export function buildProgram(): Command {
     .description(
       "AI-powered CLI that critiques commit message quality and drafts conventional-commit messages.",
     )
-    .option("--analyze", "critique the last 50 commits and print a report")
+    .option("--analyze", "critique recent commits and print a report")
     .option(
       "--url <url>",
       "analyze a remote repo (shallow-cloned) instead of the current one",
@@ -43,6 +59,12 @@ export function buildProgram(): Command {
     .option(
       "--write",
       "suggest a conventional-commit message for the staged diff",
+    )
+    .option("--json", "with --analyze, print the raw structured result as JSON")
+    .option(
+      "--limit <n>",
+      "with --analyze, number of commits to review (default 50)",
+      parseLimit,
     );
   return program;
 }
@@ -56,7 +78,7 @@ export async function run(argv: string[]): Promise<void> {
 
   if (mode.kind === "analyze") {
     const { runAnalyze } = await import("./analyze.js");
-    await runAnalyze({ url: mode.url });
+    await runAnalyze({ url: mode.url, json: mode.json, limit: mode.limit });
     return;
   }
 
