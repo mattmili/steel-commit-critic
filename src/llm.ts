@@ -45,20 +45,24 @@ function stripToJson(raw: string): string {
  * Call the model, parse its reply as JSON, and validate against `schema`.
  * Retries once with a corrective nudge, then throws a clear error.
  */
+const DEBUG = Boolean(process.env.COMMIT_CRITIC_DEBUG);
+
 async function requestJson<T>(
   schema: ZodSchema<T>,
   system: string,
   user: string,
+  maxTokens = 8192,
 ): Promise<T> {
   const { client, model } = getClient();
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
+  let lastReason = "no response";
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     let message: Anthropic.Message;
     try {
       message = await client.messages.create({
         model,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system,
         messages,
       });
@@ -68,11 +72,25 @@ async function requestJson<T>(
     }
 
     const text = extractText(message);
+    if (DEBUG) {
+      console.error(
+        `\n[commit-critic] attempt ${attempt} stop_reason=${message.stop_reason} ` +
+          `output_tokens=${message.usage.output_tokens}\n${text}\n`,
+      );
+    }
+
+    if (message.stop_reason === "max_tokens") {
+      lastReason = `response was cut off at the ${maxTokens}-token limit`;
+    }
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(stripToJson(text));
     } catch {
       parsed = undefined;
+      if (message.stop_reason !== "max_tokens") {
+        lastReason = "response was not valid JSON";
+      }
     }
 
     const result =
@@ -82,9 +100,17 @@ async function requestJson<T>(
 
     if (result.success) return result.data;
 
+    if (parsed !== undefined && !result.success && result.error) {
+      lastReason = `JSON did not match schema: ${result.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join(".")} ${i.message}`)
+        .join("; ")}`;
+    }
+
     if (attempt === 2) {
       throw new Error(
-        "LLM returned data that did not match the expected schema after a retry.",
+        `LLM response could not be used after a retry (${lastReason}). ` +
+          `Re-run with COMMIT_CRITIC_DEBUG=1 to see the raw output.`,
       );
     }
 
@@ -120,26 +146,45 @@ For EVERY commit provide all of:
 - "better": a concrete rewritten commit message (used when the score is low).
 - "whyItsGood": what this message does well (used when the score is high).
 
+Keep each of "issue", "better", and "whyItsGood" to a single short sentence.
 Return ONLY a JSON object of the form:
 {"critiques":[{"commit": "<original message>", "score": <int>, "issue": "...", "better": "...", "whyItsGood": "..."}]}
 Keep "commit" equal to the original message you were given. No prose. No code fences.`;
+
+/** Commits per LLM call, to keep each JSON response well under the token cap. */
+const CRITIQUE_BATCH_SIZE = 15;
+
+async function critiqueBatch(
+  commits: CommitRecord[],
+): Promise<CommitCritique[]> {
+  const list = commits
+    .map((c, i) => `${i + 1}. ${JSON.stringify(c.message)}`)
+    .join("\n");
+  const user = `Critique these ${commits.length} commit messages:\n\n${list}`;
+  const { critiques } = await requestJson(
+    CommitCritiqueListSchema,
+    CRITIQUE_SYSTEM,
+    user,
+    8192,
+  );
+  return critiques;
+}
 
 export async function critiqueCommits(
   commits: CommitRecord[],
 ): Promise<CommitCritique[]> {
   if (commits.length === 0) return [];
 
-  const list = commits
-    .map((c, i) => `${i + 1}. ${JSON.stringify(c.message)}`)
-    .join("\n");
-  const user = `Critique these ${commits.length} commit messages:\n\n${list}`;
+  const batches: CommitRecord[][] = [];
+  for (let i = 0; i < commits.length; i += CRITIQUE_BATCH_SIZE) {
+    batches.push(commits.slice(i, i + CRITIQUE_BATCH_SIZE));
+  }
 
-  const { critiques } = await requestJson(
-    CommitCritiqueListSchema,
-    CRITIQUE_SYSTEM,
-    user,
-  );
-  return critiques;
+  const results: CommitCritique[] = [];
+  for (const batch of batches) {
+    results.push(...(await critiqueBatch(batch)));
+  }
+  return results;
 }
 
 const SUGGEST_SYSTEM = `You draft Conventional Commits messages from a staged Git diff.
