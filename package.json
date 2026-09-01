@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "description": "AI-powered CLI that analyzes commit message quality and drafts conventional-commit messages from staged diffs.",
   "type": "module",
+  "bin": {
+    "commit-critic": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
@@ -28,7 +35,6 @@
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
-    "enquirer": "^2.4.1",
     "simple-git": "^3.27.0",
     "zod": "^3.23.8"
   },
