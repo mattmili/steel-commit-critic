@@ -14,15 +14,22 @@ const DEFAULT_MODEL = "claude-sonnet-5";
 /** Cap the diff we send so a huge staged change can't blow the context. */
 const MAX_DIFF_CHARS = 12_000;
 
-function getClient(): { client: Anthropic; model: string } {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+/** Throw the actionable "no key" error before any network work starts. */
+export function assertApiKey(): void {
+  if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
       "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.",
     );
   }
+}
+
+function getClient(): { client: Anthropic; model: string } {
+  assertApiKey();
   const model = process.env.COMMIT_CRITIC_MODEL || DEFAULT_MODEL;
-  return { client: new Anthropic({ apiKey }), model };
+  return {
+    client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+    model,
+  };
 }
 
 function extractText(message: Anthropic.Message): string {
@@ -170,21 +177,54 @@ async function critiqueBatch(
   return critiques;
 }
 
+export interface CritiqueOptions {
+  onProgress?: (completed: number, total: number) => void;
+}
+
+export interface CritiqueOutcome {
+  critiques: CommitCritique[];
+  /** Number of batches that failed and were skipped. */
+  failedBatches: number;
+}
+
 export async function critiqueCommits(
   commits: CommitRecord[],
-): Promise<CommitCritique[]> {
-  if (commits.length === 0) return [];
+  options: CritiqueOptions = {},
+): Promise<CritiqueOutcome> {
+  if (commits.length === 0) return { critiques: [], failedBatches: 0 };
+  assertApiKey();
 
   const batches: CommitRecord[][] = [];
   for (let i = 0; i < commits.length; i += CRITIQUE_BATCH_SIZE) {
     batches.push(commits.slice(i, i + CRITIQUE_BATCH_SIZE));
   }
 
-  const results: CommitCritique[] = [];
+  const critiques: CommitCritique[] = [];
+  let completed = 0;
+  let failedBatches = 0;
+
   for (const batch of batches) {
-    results.push(...(await critiqueBatch(batch)));
+    try {
+      critiques.push(...(await critiqueBatch(batch)));
+    } catch (err) {
+      failedBatches += 1;
+      if (DEBUG) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error(`[commit-critic] critique batch failed: ${detail}`);
+      }
+      // A whole run shouldn't fail because one batch did; keep what we have.
+    }
+    completed += batch.length;
+    options.onProgress?.(completed, commits.length);
   }
-  return results;
+
+  if (critiques.length === 0 && failedBatches > 0) {
+    throw new Error(
+      "Every critique batch failed. Re-run with COMMIT_CRITIC_DEBUG=1 for details.",
+    );
+  }
+
+  return { critiques, failedBatches };
 }
 
 const SUGGEST_SYSTEM = `You draft Conventional Commits messages from a staged Git diff.
@@ -206,6 +246,7 @@ export async function suggestCommitMessage(
   diff: string,
   stats: StagedDiffStats,
 ): Promise<CommitSuggestion> {
+  assertApiKey();
   const clipped =
     diff.length > MAX_DIFF_CHARS
       ? `${diff.slice(0, MAX_DIFF_CHARS)}\n\n[diff truncated]`

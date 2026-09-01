@@ -1,5 +1,7 @@
 # commit-critic
 
+[![CI](https://github.com/mattmili/steel-commit-critic/actions/workflows/ci.yml/badge.svg)](https://github.com/mattmili/steel-commit-critic/actions/workflows/ci.yml)
+
 An AI-powered terminal tool that critiques Git commit message quality and helps
 you write better commits. It has two modes:
 
@@ -61,21 +63,42 @@ commit-critic --analyze
 # Analyze the last 50 commits of a remote repo
 commit-critic --analyze --url="https://github.com/steel-dev/steel-browser"
 
+# Review a different number of commits
+commit-critic --analyze --limit 20
+
+# Machine-readable output (skips the spinner and colour)
+commit-critic --analyze --json | jq '.summary'
+
 # Interactive commit writer for staged changes
 commit-critic --write
 ```
 
+| Flag | Mode | Effect |
+| --- | --- | --- |
+| `--url <url>` | analyze | Analyze a shallow clone of a remote repo instead of the cwd. |
+| `--limit <n>` | analyze | Number of commits to review (default 50). |
+| `--json` | analyze | Print the raw `AnalyzeResult` as JSON on stdout; no spinner or colour. |
+
+A spinner runs on stderr during LLM calls, so `--json` and piped output stay
+clean. Colour is disabled automatically when stdout is not a TTY.
+
 ### `--analyze` output
+
+A full sample is in [`docs/example-analyze.txt`](docs/example-analyze.txt).
 
 ```
 Analyzing last 50 commits...
+✓ Critique complete
+
+50 commits  ·  avg 4.2/10  ·  grade D  ·  34 need work  ·  9 solid
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💩 COMMITS THAT NEED WORK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Commit: "fixed bug"
-Score: 2/10
+         a1b2c3d · Ada Lovelace · 2 weeks ago
+Score: 2/10  ▰▰▱▱▱▱▱▱▱▱
 Issue: Too vague - which bug? What was the impact?
 Better: "fix(auth): resolve token expiration handling"
 
@@ -84,9 +107,11 @@ Better: "fix(auth): resolve token expiration handling"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Commit: "feat(api): add Redis caching layer
+
          - Implement cache for read endpoints
          - Add TTL configuration"
-Score: 9/10
+         9a9a9a9 · Bob Vance · 3 days ago
+Score: 9/10  ▰▰▰▰▰▰▰▰▰▱
 Why it's good: Clear scope, specific changes, measurable impact
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -95,15 +120,27 @@ Why it's good: Clear scope, specific changes, measurable impact
 Average score: 4.2/10
 Vague commits: 34 (68%)
 One-word commits: 12 (24%)
+
+Score spread:
+  1-3  ████████████████████ 24
+  4-6  ██████████ 12
+  7-10 ███████ 9
 ```
 
-Scores are color-coded: red below 4, yellow 4–7, green 8 and above.
+Scores are color-coded: red below 4, yellow 4–7, green 8 and above. The bar,
+summary line, commit metadata, and score-spread histogram are additive to the
+required layout.
 
 ### `--write` output
 
 ```
 Analyzing staged changes... (12 files changed, +247 -89 lines)
 
+  src/auth/session.ts  ▍▍▍▍▍▍▍▍▍▍▍▍ 96
+  src/auth/errors.ts   ▍▍▍▍▍ 41
+  tests/auth.test.ts   ▍▍▍ 22
+
+✓ Draft ready
 Changes detected:
 - Modified authentication logic
 - Added error handling
@@ -118,12 +155,12 @@ refactor(auth): improve error handling
 - Update tests to cover edge cases
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Press Enter to accept, or type your own message:
+Press Enter to accept, type your own message, or 'r' to regenerate:
 >
 ```
 
-Pressing Enter commits the suggested message. Typing text and pressing Enter
-commits that instead.
+Pressing Enter commits the suggested message; typing text commits that instead;
+`r` asks the LLM for a fresh draft.
 
 ## Scoring rubric
 
@@ -155,20 +192,32 @@ The LLM is required to return JSON matching a [zod](https://zod.dev) schema
   same commit history produces a comparable report each run.
 - **Validation** — every response goes through `schema.safeParse`. On a
   malformed reply the tool retries once with a corrective instruction, then
-  fails with a clear error rather than rendering garbage.
+  fails with a clear error (naming the cause: token limit, invalid JSON, or the
+  specific schema violation).
 - **Rendering** — the formatter consumes typed data, so the output layout is
-  decoupled from model phrasing.
+  decoupled from model phrasing, and `--json` falls out for free.
+
+Commits are critiqued in batches of 15 so no single response hits the token
+limit; a failed batch is skipped with a warning rather than failing the run.
+Set `COMMIT_CRITIC_DEBUG=1` to print each model response.
 
 ## Development
 
 ```bash
-npm test           # vitest run
+npm test           # vitest run (42 tests)
 npm run test:watch
 npm run typecheck
 ```
 
-Tests cover `git.ts` (with `simple-git` mocked), the zod schemas
-(valid/invalid LLM responses), the stats math, and the report formatter.
+Tests cover `cli.ts` (flag parsing / mode resolution), `git.ts` (with
+`simple-git` mocked), the zod schemas (valid/invalid LLM responses), the stats
+and grading math, `enrichCritiques`, and the report formatter (score bars,
+relative dates, histogram).
+
+### Demo GIF
+
+[`docs/demo.tape`](docs/demo.tape) is a [vhs](https://github.com/charmbracelet/vhs)
+script: `vhs docs/demo.tape` writes `docs/demo.gif`.
 
 > Note: `npm audit` reports advisories in `vitest`'s transitive `esbuild`/`vite`
 > dev dependencies. They do not affect the shipped CLI (runtime deps only:

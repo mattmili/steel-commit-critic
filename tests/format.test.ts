@@ -3,8 +3,10 @@ import type { AnalyzeResult } from "../src/analyze.js";
 import {
   colorScore,
   formatCommitMessage,
+  relativeDate,
   renderAnalysis,
   renderSuggestion,
+  scoreBar,
 } from "../src/format.js";
 
 // eslint-disable-next-line no-control-regex
@@ -18,11 +20,40 @@ describe("colorScore", () => {
   });
 });
 
+describe("scoreBar", () => {
+  it("fills to the score across 10 cells", () => {
+    expect(stripAnsi(scoreBar(3))).toBe("▰▰▰▱▱▱▱▱▱▱");
+    expect(stripAnsi(scoreBar(0))).toBe("▱▱▱▱▱▱▱▱▱▱");
+    expect(stripAnsi(scoreBar(10))).toBe("▰▰▰▰▰▰▰▰▰▰");
+  });
+});
+
+describe("relativeDate", () => {
+  const now = new Date("2026-01-10T00:00:00Z");
+  it("formats an age in the largest sensible unit", () => {
+    expect(relativeDate("2026-01-09T00:00:00Z", now)).toBe("1 day ago");
+    expect(relativeDate("2026-01-03T00:00:00Z", now)).toBe("1 week ago");
+    expect(relativeDate("2026-01-09T23:59:30Z", now)).toBe("30 seconds ago");
+  });
+  it("returns empty string for an unparseable date", () => {
+    expect(relativeDate("not-a-date", now)).toBe("");
+  });
+});
+
 describe("renderAnalysis", () => {
   const result: AnalyzeResult = {
     analyzed: 2,
     needsWork: [
-      { commit: "wip", score: 1, issue: "no info", better: "say what", whyItsGood: "n/a" },
+      {
+        commit: "wip",
+        score: 1,
+        issue: "no info",
+        better: "say what",
+        whyItsGood: "n/a",
+        hash: "abcdef1234",
+        author: "Ada",
+        date: "2026-01-01T00:00:00Z",
+      },
     ],
     wellWritten: [
       {
@@ -40,6 +71,19 @@ describe("renderAnalysis", () => {
       oneWordCount: 1,
       oneWordPercent: 50,
     },
+    summary: {
+      commits: 2,
+      averageScore: 5,
+      grade: "D",
+      needWork: 1,
+      wellWritten: 1,
+      distribution: [
+        { label: "1-3", count: 1 },
+        { label: "4-6", count: 0 },
+        { label: "7-10", count: 1 },
+      ],
+    },
+    warnings: [],
   };
 
   it("renders all three boxed sections and the exact stat lines", () => {
@@ -54,6 +98,19 @@ describe("renderAnalysis", () => {
     expect(out).toContain("Average score: 5.0/10");
     expect(out).toContain("Vague commits: 1 (50%)");
     expect(out).toContain("One-word commits: 1 (50%)");
+  });
+
+  it("shows the summary line and score-spread histogram", () => {
+    const out = stripAnsi(renderAnalysis(result));
+    expect(out).toContain("2 commits");
+    expect(out).toContain("grade D");
+    expect(out).toContain("Score spread:");
+    expect(out).toMatch(/1-3\s+█+ 1/);
+  });
+
+  it("shows commit metadata when present", () => {
+    const out = stripAnsi(renderAnalysis(result));
+    expect(out).toContain("abcdef1 · Ada ·");
   });
 
   it("indents multi-line commit bodies under the opening quote", () => {
@@ -76,13 +133,15 @@ describe("formatCommitMessage / renderSuggestion", () => {
   });
 
   it("boxes the suggested message with type(scope): summary and bullets", () => {
-    const out = renderSuggestion({
-      type: "refactor",
-      scope: "auth",
-      summary: "improve error handling",
-      body: ["Add error types", "Update tests"],
-      changeTypes: ["x"],
-    });
+    const out = stripAnsi(
+      renderSuggestion({
+        type: "refactor",
+        scope: "auth",
+        summary: "improve error handling",
+        body: ["Add error types", "Update tests"],
+        changeTypes: ["x"],
+      }),
+    );
     expect(out).toContain("Suggested commit message:");
     expect(out).toContain("refactor(auth): improve error handling");
     expect(out).toContain("- Add error types");
